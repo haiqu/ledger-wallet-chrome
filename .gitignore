@@ -13,3 +13,4 @@ signature/
 crowdin.yaml
 fixme.txt
 build.bat
+push.bat

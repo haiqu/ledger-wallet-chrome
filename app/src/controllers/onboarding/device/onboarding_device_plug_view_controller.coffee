@@ -7,6 +7,7 @@ class @OnboardingDevicePlugViewController extends @OnboardingViewController
     logoContainer: '.logo-container'
     greyedContainer: '.greyed-container'
     actionsContainer: '.actions-container'
+    networkSelect: '#networks'
 
   onAfterRender: ->
     super
@@ -44,6 +45,7 @@ class @OnboardingDevicePlugViewController extends @OnboardingViewController
 
   navigateContinue: ->
     ledger.app.router.go '/onboarding/device/connecting'
+
 
   _listenEvents: ->
     if ledger.app.dongle? and !ledger.app.dongle.isInBootloaderMode() or ledger.app.isConnectingDongle()

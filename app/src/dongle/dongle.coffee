@@ -164,6 +164,19 @@ class @ledger.dongle.Dongle extends EventEmitter
       d.reject(e)
     d.promise
 
+  getCoinVersion: (callback = undefined) ->
+    d = ledger.defer(callback)
+    d.resolve(
+      @_sendApdu(new ByteString("E016000000", HEX)).then (result) =>
+        message = result.bytes(3, result.byteAt(2))
+        short = result.bytes(3 + message.length + 1, result.byteAt(3 + message.length))
+        {P2PKH: result.byteAt(0), P2SH: result.byteAt(1), message: "#{message} signed message:\n", short: short}
+      .fail =>
+        l "FAILED"
+        {P2PKH: ledger.bitcoin.Networks.bitcoin.version.regular, P2SH: ledger.bitcoin.Networks.bitcoin.version.P2SH, message: "Bitcoin signed message:\n", short: 'BTC'}
+    )
+    d.promise
+
   getFirmwareInformation: -> @_firmwareInformation
 
   getSw: -> @_btchip.card.SW
@@ -486,7 +499,8 @@ class @ledger.dongle.Dongle extends EventEmitter
   # @param [String] path Optional argument
   # @param [Function] callback Optional argument
   # @return [Q.Promise]
-  signMessage: (message, {path, pubKey}, callback=undefined) ->
+  signMessage: (message, {prefix, path, pubKey}, callback=undefined) ->
+    prefix ?= '\x18Bitcoin Signed Message:\n'
     if ! pubKey?
       @getPublicAddress(path).then((address) => console.log("address=", address); @signMessage(message, path: path, pubKey: address.publicKey, callback))
     else
@@ -497,7 +511,7 @@ class @ledger.dongle.Dongle extends EventEmitter
         .then =>
           return @_btchip.signMessageSign_async(if (@_pin?) then new ByteString(@_pin, ASCII) else new ByteString("0000", ASCII))
         .then (sig) =>
-          signedMessage = @_convertMessageSignature(pubKey, message, sig.signature)
+          signedMessage = @_convertMessageSignature(pubKey, message, prefix, sig.signature)
           d.resolve(signedMessage)
         .catch (error) ->
           console.error("Fail to signMessage :", error)
@@ -781,9 +795,9 @@ class @ledger.dongle.Dongle extends EventEmitter
       error = Errors.new(Errors.UnknowError, errorCode)
     return error
 
-  _convertMessageSignature: (pubKey, message, signature) ->
+  _convertMessageSignature: (pubKey, message, prefix, signature) ->
     bitcoin = new BitcoinExternal()
-    hash = bitcoin.getSignedMessageHash(message)
+    hash = bitcoin.getSignedMessageHash(message, prefix)
     pubKey = bitcoin.compressPublicKey(pubKey)
     for i in [0...4]
       recoveredKey = bitcoin.recoverPublicKey(signature, hash, i)

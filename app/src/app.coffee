@@ -14,9 +14,8 @@ require @ledger.imports, ->
       @_listenAppEvents()
       addEventListener "message", Api.listener.bind(Api), false
       ledger.i18n.init =>
-        ledger.preferences.defaults.init =>
+        ledger.preferences.common.init =>
           @router.go('/') if @setExecutionMode(@Modes.Wallet)
-          ledger.tasks.FeesComputationTask.instance.startIfNeccessary()
 
     ###
       Sets the execution mode of the application. In Wallet mode, the application handles the wallets state by starting services,
@@ -85,7 +84,15 @@ require @ledger.imports, ->
       return unless @isInWalletMode()
       @emit 'dongle:unlocked', @dongle
       @emit 'wallet:initializing'
-      ledger.app.dongle.setCoinVersion(ledger.config.network.version.regular, ledger.config.network.version.P2SH).then =>
+      ledger.app.dongle.getCoinVersion().then ({P2PKH, P2SH, message}) =>
+        network = ledger.bitcoin.Networks.bitcoin
+        for k, v of ledger.bitcoin.Networks
+          if v.version.regular is P2PKH and v.version.P2SH is P2SH
+            network = v
+        ledger.config.network = network
+        ledger.app.dongle.setCoinVersion(ledger.config.network.version.regular, ledger.config.network.version.P2SH)
+      .then =>
+        ledger.tasks.FeesComputationTask.instance.startIfNeccessary()
         ledger.tasks.WalletOpenTask.instance.startIfNeccessary()
         ledger.tasks.WalletOpenTask.instance.onComplete (result, error) =>
           if error?

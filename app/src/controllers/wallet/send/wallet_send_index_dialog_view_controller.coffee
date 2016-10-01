@@ -142,13 +142,13 @@ class @WalletSendIndexDialogViewController extends ledger.common.DialogViewContr
     if @_transactionAmount().length == 0 or not ledger.Amount.fromSatoshi(@_transactionAmount()).gt(0)
       return t 'common.errors.invalid_amount'
     else if not Bitcoin.Address.validate @_receiverBitcoinAddress()
-      return t 'common.errors.invalid_receiver_address'
+      return _.str.sprintf(t('common.errors.invalid_receiver_address'), ledger.config.network.name)
     undefined
 
   _updateFeesSelect: ->
     @view.feesSelect.empty()
-    for id in _.sortBy(_.keys(ledger.preferences.defaults.Bitcoin.fees), (id) -> ledger.preferences.defaults.Bitcoin.fees[id].value).reverse()
-      fee = ledger.preferences.defaults.Bitcoin.fees[id]
+    for id in _.sortBy(_.keys(ledger.preferences.defaults.Coin.fees), (id) -> ledger.preferences.defaults.Coin.fees[id].value).reverse()
+      fee = ledger.preferences.defaults.Coin.fees[id]
       text = t(fee.localization)
       node = $("<option></option>").text(text).attr('value', ledger.tasks.FeesComputationTask.instance.getFeesForLevelId(fee.value.toString()).value)
       if fee.value == ledger.preferences.instance.getMiningFee()
@@ -203,6 +203,8 @@ class @WalletSendIndexDialogViewController extends ledger.common.DialogViewContr
         selectedUtxo.push output
         total = total.add(output.get('value'))
       estimatedSize = ledger.bitcoin.estimateTransactionSize(selectedUtxo.length, 2).max # For now always consider we need a change output
+      unless ledger.config.network.handleFeePerByte
+        estimatedSize = (estimatedSize + 1000) - ((estimatedSize + 1000) % 1000)
       fees = feePerByte.multiply(estimatedSize)
       if desiredAmount.gt(0) and total.lt(desiredAmount.add(fees)) and selectedUtxo.length is utxo.length
         # Not enough funds
