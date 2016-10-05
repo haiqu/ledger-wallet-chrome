@@ -7,6 +7,8 @@ class @WalletSendIndexDialogViewController extends ledger.common.DialogViewContr
     totalLabel: '#total_label'
     errorContainer: '#error_container'
     receiverInput: '#receiver_input'
+    dataInput: '#data_input'
+    dataRow: '#data_row'
     openScannerButton: '#open_scanner_button'
     feesSelect: '#fees_select'
     accountsSelect: '#accounts_select'
@@ -18,11 +20,16 @@ class @WalletSendIndexDialogViewController extends ledger.common.DialogViewContr
   onAfterRender: () ->
     super
 
+    @view.dataRow.hide()
+
     # apply params
     if @params.amount?
       @view.amountInput.val @params.amount
     if @params.address?
       @view.receiverInput.val @params.address
+    if @params.data? && @params.data.length > 0
+      @view.dataInput.val @params.data
+      @view.dataRow.show()
 
     # configure view
     @view.amountInput.amountInput(ledger.preferences.instance.getBitcoinUnitMaximumDecimalDigitsCount())
@@ -60,7 +67,8 @@ class @WalletSendIndexDialogViewController extends ledger.common.DialogViewContr
 
       pushDialogBlock = (fees) =>
         {utxo, fees} = @_computeAmount(ledger.Amount.fromSatoshi(fees).divide(1000))
-        dialog = new WalletSendPreparingDialogViewController amount: @_transactionAmount(), address: @_receiverBitcoinAddress(), fees: fees, account: @_selectedAccount(), utxo: utxo
+        data = if (@_dataValue().length > 0) then @_dataValue() else undefined
+        dialog = new WalletSendPreparingDialogViewController amount: @_transactionAmount(), address: @_receiverBitcoinAddress(), fees: fees, account: @_selectedAccount(), utxo: utxo, data: data
         @getDialog().push dialog
 
       {amount, fees} = @_computeAmount()
@@ -137,12 +145,21 @@ class @WalletSendIndexDialogViewController extends ledger.common.DialogViewContr
   _transactionAmount: ->
     ledger.formatters.fromValueToSatoshi(_.str.trim(@view.amountInput.val()))
 
+  _dataValue: ->
+    @view.dataInput.val()
+
+  _isDataValid: ->
+    s = @_dataValue()
+    s.match(/^[a-f0-9]+$/i) != null && s.length % 2 == 0 && s.length <= 160
+
   _nextFormError: ->
     # check amount
     if @_transactionAmount().length == 0 or not ledger.Amount.fromSatoshi(@_transactionAmount()).gt(0)
       return t 'common.errors.invalid_amount'
     else if not Bitcoin.Address.validate @_receiverBitcoinAddress()
       return _.str.sprintf(t('common.errors.invalid_receiver_address'), ledger.config.network.name)
+    else if @_dataValue().length > 0 && not @_isDataValid()
+      return t 'common.errors.invalid_op_return_data'
     undefined
 
   _updateFeesSelect: ->
@@ -203,6 +220,8 @@ class @WalletSendIndexDialogViewController extends ledger.common.DialogViewContr
         selectedUtxo.push output
         total = total.add(output.get('value'))
       estimatedSize = ledger.bitcoin.estimateTransactionSize(selectedUtxo.length, 2).max # For now always consider we need a change output
+      if (@_dataValue().length > 0)
+        estimatedSize += @_dataValue().length / 2 + 4 + 1
       unless ledger.config.network.handleFeePerByte
         estimatedSize = (estimatedSize + 1000) - ((estimatedSize + 1000) % 1000)
       fees = feePerByte.multiply(estimatedSize)

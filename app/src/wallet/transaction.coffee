@@ -59,7 +59,7 @@ class ledger.wallet.Transaction
   # @param [ledger.Amount] amount
   # @param [ledger.Amount] fees
   # @param [String] recipientAddress
-  constructor: (@dongle, @amount, @fees, @recipientAddress, @inputs, @changePath) ->
+  constructor: (@dongle, @amount, @fees, @recipientAddress, @inputs, @changePath, @data) ->
     @_btInputs = []
     @_btcAssociatedKeyPath = []
     for input in inputs
@@ -147,7 +147,7 @@ class ledger.wallet.Transaction
       Errors.throw('Transaction must me initialized before preparation')
     d = ledger.defer(callback)
     l "Prepare", @_btInputs, @_btcAssociatedKeyPath
-    @dongle.createPaymentTransaction(@_btInputs, @_btcAssociatedKeyPath, @changePath, @recipientAddress, @amount, @fees)
+    @dongle.createPaymentTransaction(@_btInputs, @_btcAssociatedKeyPath, @changePath, @recipientAddress, @amount, @fees, @data)
     .progress (progress) =>
       currentStep = progress.currentPublicKey + progress.currentSignTransaction + progress.currentTrustedInput + progress.currentHashOutputBase58 + progress.currentUntrustedHash
       stepsCount = progress.publicKeyCount + progress.transactionSignCount + progress.trustedInputsCount + progress.hashOutputBase58Count + progress.untrustedHashCount
@@ -173,7 +173,7 @@ class ledger.wallet.Transaction
   sign: (callback = undefined, progressCallback = undefined) ->
     d = ledger.defer(callback)
     l "Prepare", @_btInputs, @_btcAssociatedKeyPath
-    @dongle.createPaymentTransaction(@_btInputs, @_btcAssociatedKeyPath, @changePath, @recipientAddress, @amount, @fees)
+    @dongle.createPaymentTransaction(@_btInputs, @_btcAssociatedKeyPath, @changePath, @recipientAddress, @amount, @fees, @data)
     .progress (progress) =>
       d.notify(progress)
     .then (@_signedRawTransaction) =>
@@ -213,7 +213,7 @@ class ledger.wallet.Transaction
       Errors.throw('Transaction must me prepared before validation')
     d = ledger.defer(callback)
     @dongle.createPaymentTransaction(
-      @_btInputs, @_btcAssociatedKeyPath, @changePath, @recipientAddress, @amount, @fees,
+      @_btInputs, @_btcAssociatedKeyPath, @changePath, @recipientAddress, @amount, @fees, @data,
       undefined, # Default lockTime
       undefined, # Default sigHash
       validationKey,
@@ -258,11 +258,9 @@ class ledger.wallet.Transaction
     @option [Function] callback The callback called once the transaction is created
     @return [Q.Promise] A closure
   ###
-  @create: ({amount, fees, address, utxo, changePath}, callback = null) ->
+  @create: ({amount, fees, address, utxo, changePath, data}, callback = null) ->
     d = ledger.defer(callback)
     dust = Amount.fromSatoshi(ledger.config.network.dust)
-    l "CREATE TRANSACTION", arguments
-    l "DUST", dust
     return d.rejectWithError(Errors.DustTransaction) && d.promise if amount.lte(dust)
     totalUtxoAmount = _(utxo).chain().map((u) -> ledger.Amount.fromSatoshi(u.get('value'))).reduce(((a, b) -> a.add(b)), ledger.Amount.fromSatoshi(0)).value()
     return d.rejectWithError(Errors.NotEnoughFunds) && d.promise if totalUtxoAmount.lt(amount.add(fees))
@@ -276,6 +274,7 @@ class ledger.wallet.Transaction
     $info("Address: ", address)
     $info("UTXO: ", utxo)
     $info("Change path: ", changePath)
+    $info("Data: ", data)
 
     changeAmount = totalUtxoAmount.subtract(amount.add(fees))
     if changeAmount.lte(dust)
@@ -290,11 +289,12 @@ class ledger.wallet.Transaction
       d = ledger.defer()
       ledger.api.TransactionsRestClient.instance.getRawTransaction output.get('transaction_hash'), (rawTransaction, error) ->
         if error?
-         return d.rejectWithError(Errors.NetworkError)
+          console.log error
+          return d.rejectWithError(Errors.NetworkError)
         result = raw: rawTransaction, paths: [output.get('path')], output_index: output.get('index'), value: output.get('value')
         d.resolve(iterate(index + 1, inputs.concat([result])))
       d.promise
-    d.resolve(iterate(0, []).then (inputs) => new Transaction(ledger.app.dongle, amount, fees, address, inputs, changePath))
+    d.resolve(iterate(0, []).then (inputs) => new Transaction(ledger.app.dongle, amount, fees, address, inputs, changePath, data))
     d.promise
 
   ###
@@ -325,7 +325,6 @@ class ledger.wallet.Transaction
     $info("Inputs paths: ", inputsPath)
     $info("Change path: ", changePath)
     $info("Excluded inputs", excludedInputs)
-
 
     isOutputExcluded = (output) ->
       return for [index, hash] in excludedInputs when output['transaction_hash'] is hash and output['output_index'] is index
